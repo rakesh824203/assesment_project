@@ -198,7 +198,6 @@ $expensive_products = $data_expensive->fetchAll();
             </div>
         </div>
 
-
     </div>
 
 
@@ -223,7 +222,6 @@ $expensive_products = $data_expensive->fetchAll();
                 },
             });
 
-            // Optional: Apply border radius to search input
             $('#productsTable_filter input').css('border-radius', '6px');
         });
     </script>
