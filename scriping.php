@@ -1,51 +1,99 @@
 <?php
 include('config.php');
+include_once("simple_html_dom.php");
 
-$url = 'https://dummyjson.com/products';
+$url = "http://books.toscrape.com/";
 
 $curl = curl_init();
-curl_setopt_array($curl, array(
-    CURLOPT_URL => $url,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_ENCODING => '',
-    CURLOPT_MAXREDIRS => 10,
-    CURLOPT_TIMEOUT => 0,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-    CURLOPT_CUSTOMREQUEST => 'GET',
-   
-));
 
-$response = curl_exec($curl);
+curl_setopt($curl, CURLOPT_URL, $url);
+curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
-$data = json_decode($response, true);
+$htmlContent = curl_exec($curl);
+
+if ($htmlContent === false) {
+    $error = curl_error($curl);
+    echo "cURL error: " . $error;
+    exit;
+}
+
+curl_close($curl);
+
+$html = str_get_html($htmlContent);
+
+$products = $html->find(".product_pod");
+
+if (empty($products)) {
+    echo "<p>No products found on the page.</p>";
+    exit;
+}
+
 $productData = $pdo->query("SELECT name, price, rating, description FROM products")->fetchAll(PDO::FETCH_ASSOC);
 
 if (count($productData) <= 200):
     $count = 200 - count($productData);
-    $usedArray = array_slice($data['products'], 0, $count);
+    $usedArray = array_slice($products, 0, $count);
     unset($data);
     if (!empty($usedArray)):
-        insertData($pdo, $usedArray);
+        insertData($pdo, $usedArray ,$url);
     endif;
 endif;
-function insertData($pdo, $products)
+function insertData($pdo, $products,$url)
 {
-
-    $insertsql = $pdo->prepare("INSERT INTO products (name, price, rating, description) VALUES (:name, :price, :rating, :description)");
+    $insertdata = $pdo->prepare("INSERT INTO products (name, price, rating, description) VALUES (:name, :price, :rating, :description)");
     foreach ($products as $product) {
-        $insertsql->execute([
-            ':name' => $product['title'],
-            ':price' => $product['price'],
-            ':rating' => $product['rating'],
-            ':description' => $product['description']
-        ]);
+        $name = $product->find("h3 a", 0);
+
+        $price = $product->find(".price_color", 0);
+
+        $rating = $product->find(".star-rating", 0);
+
+        $productLink = $name ? $name->href : null;
+
+        $description = "Description not available";
+        if ($productLink) {
+            $productUrl = $url . $productLink;
+            $curl = curl_init();
+            curl_setopt($curl, CURLOPT_URL, $productUrl);
+            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+            $productHtmlContent = curl_exec($curl);
+            curl_close($curl);
+
+            $productHtml = str_get_html($productHtmlContent);
+
+            $descriptionElement = $productHtml->find("#product_description + p", 0);
+            if ($descriptionElement) {
+                $description = $descriptionElement->plaintext;
+            }
+
+            $productHtml->clear();
+        }
+
+        $productName = $name ? $name->title : "N/A";
+        $productPrice = $price ? $price->plaintext : "N/A";
+        $productRating = $rating ? $rating->getAttribute('class') : "N/A";
+        $productRating = str_replace("star-rating ", "", $productRating);
+
+        try {
+            $insertdata->execute([
+                ':name' => $productName,
+                ':price' => $productPrice,
+                ':rating' => $productRating,
+                ':description' => $description
+            ]);
+        } catch (PDOException $e) {
+            // echo "Failed to insert product: " . $e->getMessage();
+        }
     }
 }
 
+$html->clear();
 
 $a = 1;
-
 $sql_avg = "SELECT AVG(price) AS avg_price, AVG(rating) AS avg_rating FROM products";
 $data_avg = $pdo->query($sql_avg);
 $avg_data = $data_avg->fetch();
@@ -55,8 +103,8 @@ $avg_rating = number_format($avg_data['avg_rating'], 2);
 $sql_min_max = "SELECT MIN(price) AS min_price, MAX(price) AS max_price FROM products";
 $data_min_max = $pdo->query($sql_min_max);
 $min_max_data = $data_min_max->fetch();
-$min_price = number_format($min_max_data['min_price'], 2);
-$max_price = number_format($min_max_data['max_price'], 2);
+$min_price = $min_max_data['min_price'];
+$max_price = $min_max_data['max_price'];
 
 $sql_top_rated = "SELECT name, rating FROM products group by name ORDER BY rating DESC LIMIT 3";
 $top_rated = $pdo->query($sql_top_rated);
@@ -65,7 +113,6 @@ $top_rated_products = $top_rated->fetchAll();
 $sql_expensive = "SELECT name, price FROM products group by name ORDER BY price DESC LIMIT 3";
 $data_expensive = $pdo->query($sql_expensive);
 $expensive_products = $data_expensive->fetchAll();
-
 
 ?>
 
@@ -140,7 +187,13 @@ $expensive_products = $data_expensive->fetchAll();
                         <?php foreach ($top_rated_products as $product): ?>
                             <li>
                                 <i class="bi bi-star-fill text-warning"></i>
-                                <?php echo htmlspecialchars($product['name']); ?> - Rating: <?php echo $product['rating']; ?> / 5
+                                <?php
+                                $ratingWords = ['One' => 1, 'Two' => 2, 'Three' => 3, 'Four' => 4, 'Five' => 5];
+
+                                $numericRating = isset($ratingWords[$product['rating']]) ? $ratingWords[$product['rating']] : 0;
+                                echo htmlspecialchars($product['name']) . " - Rating: " . $numericRating . "/5";
+                                ?>
+
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -153,7 +206,7 @@ $expensive_products = $data_expensive->fetchAll();
                         <?php foreach ($expensive_products as $product): ?>
                             <li>
                                 <i class="bi bi-tag-fill text-primary"></i>
-                                <?php echo htmlspecialchars($product['name']); ?> - Price: $<?php echo number_format($product['price'], 2); ?>
+                                <?php echo htmlspecialchars($product['name']); ?> - Price: $<?php echo $product['price']; ?>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -171,7 +224,7 @@ $expensive_products = $data_expensive->fetchAll();
                         <tr>
                             <th>Sl.No</th>
                             <th>Name</th>
-                            <th>Price ($)</th>
+                            <th>Price </th>
                             <th>Rating</th>
                             <th>Description</th>
                         </tr>
@@ -181,7 +234,7 @@ $expensive_products = $data_expensive->fetchAll();
                             <tr>
                                 <td><?= $a++; ?></td>
                                 <td><?= $product['name']; ?></td>
-                                <td><?= number_format($product['price'], 2); ?></td>
+                                <td><?= $product['price']; ?></td>
                                 <td><?= $product['rating']; ?></td>
                                 <td><?= $product['description']; ?></td>
                             </tr>
