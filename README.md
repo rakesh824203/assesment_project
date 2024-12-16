@@ -6,12 +6,13 @@ Step 1 : Install and Set Up XAMPP:
             Start the Apache and MySQL services.
 Step 2 : Set Up the Project Files:
             create the assessment_project folder inside the htdocs directory of XAMPP and place
-             the necessary files (config.php and index.php) in it.
+             the necessary files (config.php and scriping.php,simple_html_dom.php) in it.
                  xampp
                    └── htdocs
                          └── assessment_project
                                 ├── config.php
-                                └── index.php
+                                └── scriping.php
+                                └── simple_html_dom.php
 Step 3 : Configure the Database:
            Open phpMyAdmin in your browser.
            Create a new database named rakesh.
@@ -29,7 +30,7 @@ Step 5 : Start the Server
             Open XAMPP Control Panel.
             Start Apache and MySQL.
             Open your web browser and navigate to:
-               http://localhost/assesment_project/index.php
+               http://localhost/assesment_project/scriping.php
 Additional Notes:
      Ensure your PHP installation has cURL enabled.
      
